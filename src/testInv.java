@@ -13,6 +13,8 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 
+import javax.transaction.Transactional;
+
 import org.apache.http.client.ClientProtocolException;
 import org.json.JSONArray;
 import org.json.JSONException;
@@ -32,6 +34,7 @@ import in.rl.bizlog.misreport.dao.MisReportTicketsRepository;
 import in.rl.bizlog.misreport.dao.TicketProcessBarcodesBlockDao;
 import in.rl.bizlog.misreport.dao.TicketProcessBarcodesTicketDao;
 import in.rl.bizlog.misreport.dao.TicketProcessBlocksDao;
+import in.rl.bizlog.misreport.dao.TicketProcessBulkBlocksDao;
 import in.rl.bizlog.misreport.dao.TicketProcessProductsDao;
 import in.rl.bizlog.misreport.dao.TicketProcessRemarksDao;
 import in.rl.bizlog.misreport.service.BaseService;
@@ -43,6 +46,7 @@ import in.rl.bizlog.roots.model.core.mis.MisReportHistoryLogs;
 import in.rl.bizlog.roots.model.core.tickets.TicketProcessBarcodesBlock;
 import in.rl.bizlog.roots.model.core.tickets.TicketProcessBarcodesTicket;
 import in.rl.bizlog.roots.model.core.tickets.TicketProcessBlocks;
+import in.rl.bizlog.roots.model.core.tickets.TicketProcessBulkBlocks;
 import in.rl.bizlog.roots.model.core.tickets.TicketProcessProducts;
 import in.rl.bizlog.roots.model.core.tickets.TicketProcessRemarks;
 
@@ -109,6 +113,12 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 	@Autowired
 	private InventoryTrxStoresRepository inventoryTrxStoresRepository;
+
+	@Autowired
+	private TicketProcessBulkBlocks ticketProcessBulkBlocks;
+
+	@Autowired
+	private TicketProcessBulkBlocksDao ticketProcessBulkBlocksDao;
 
 //	@Autowired
 //	private MisReportHistory misReportHistory;
@@ -339,14 +349,14 @@ public class MisReportImpl extends BaseService implements MisServices {
 		}
 
 		/* END */
-		
+
 		/* ONE ASSIST BUYBACK */
 		if (retailerCode.equals("OA")) {
 			if (String.valueOf(ticketRow.get("FLOW_ID")).equals("BuyBack")) {
 				retailerCode = "OA_BUYBACK";
 			}
 		}
-		
+
 		/* END */
 
 		Map<String, String> retailerUrl = retailerMIS.getRetailerURL(retailerCode);
@@ -571,6 +581,21 @@ public class MisReportImpl extends BaseService implements MisServices {
 //				misReportBlockRepository.updateCount(ticketBlockId, count);
 			}
 
+			// Insert data into ticket process products for BULKQC FLOW
+
+			String flowId = String.valueOf(requestMap.get("flowId"));
+
+			if (flowId.equals("BulkQC")) {
+
+				List<String> ticketProductIds = misReportBlockRepository.getTicketProductId(ticketBlockId);
+
+				for (int i = 0; i < ticketProductIds.size(); i++) {
+					String ticketProductId = String.valueOf(ticketProductIds.get(i));
+					String barcode = "null";
+					updateOrInsertProdBarcode(ticketProductId, barcode);
+				}
+			}
+
 			// MIS
 			misReportBlockRepository.updateBlockMISBlockActionStatus(blockStatus, actionStatus, ticketBlockId,
 					getDateAndTime());
@@ -591,27 +616,128 @@ public class MisReportImpl extends BaseService implements MisServices {
 		return respAction;
 	}
 
+//	@SuppressWarnings("unchecked")
+//	private Map<String, String> wFeAssign(Map<String, Object> requestMap, String ticketBlockId) {
+//		Map<String, String> respAction = new HashMap<String, String>();
+//		try {
+//			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+//
+//			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+//			String blockStatus = actionStatus;
+//			String processAt = String.valueOf(resultSet.get("processAt"));
+//			String flowId = String.valueOf(resultSet.get("flowId"));
+//			String flowStatus = "PICK_MOB";
+//
+//			switch (actionStatus) {
+//			case "ASSIGNED_FE_FOR_PICKUP":
+//				blockStatus = "ASSIGNED_FE_FOR_PICKUP";
+//				break;
+//			case "ASSIGNED_FE_FOR_SERVICE_PICKUP":
+//				blockStatus = "ASSIGNED_FE_FOR_SERVICE_PICKUP";
+//				break;
+//			case "ASSIGNED_FE_FOR_SERVICE_DROP":
+//				blockStatus = "ASSIGNED_FE_FOR_SERVICE_DROP";
+//				break;
+//			case "ASSIGNED_FE_FOR_DROP":
+//				blockStatus = "ASSIGNED_FE_FOR_DROP";
+//				flowStatus = "DROP_MOB";
+//				break;
+//			default:
+//				blockStatus = actionStatus;
+//			}
+//
+//			if (flowId.equals("PickAndDropTwoWay")) {
+//				misReportBlockRepository.updateTicketBasicPriority(String.valueOf(requestMap.get("processId")),
+//						String.valueOf(resultSet.get("newTicketPriority")));
+//			}
+//
+//			// "flowId": "PickAndDropTwoWay",
+//			// "newTicketPriority": "high",
+//
+//			// wFeAssign
+//			misReportBlockRepository.updateBlockMISWFeAssign(String.valueOf(resultSet.get("feId")),
+//					String.valueOf(resultSet.get("feType")), ticketBlockId);
+//			misReportBlockRepository.updateBlockOpsWFeAssign(String.valueOf(resultSet.get("feId")),
+//					String.valueOf(resultSet.get("feType")), ticketBlockId);
+//
+//			if (actionStatus.equals("ASSIGNED_FE_FOR_PICKUP")
+//					|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_PICKUP")) {
+//				misReportBlockRepository.updateBlockMISWPickupFeAssign(String.valueOf(resultSet.get("feId")),
+//						String.valueOf(resultSet.get("feType")), String.valueOf(resultSet.get("feName")),
+//						ticketBlockId);
+//			} else if (actionStatus.equals("ASSIGNED_FE_FOR_DROP")
+//					|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_DROP")) {
+//				misReportBlockRepository.updateBlockMISWDropFeAssign(String.valueOf(resultSet.get("feId")),
+//						String.valueOf(resultSet.get("feType")), String.valueOf(resultSet.get("feName")),
+//						ticketBlockId);
+//			}
+//
+//			// mis
+//			misReportBlockRepository.updateBlockMISBlockActionStatus(blockStatus, actionStatus, ticketBlockId,
+//					getDateAndTime());
+//
+//			// Ops
+//			misReportBlockRepository.updateBlockOpsBlockStatus(flowStatus, blockStatus, ticketBlockId);
+//			misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+//
+//			respAction.put("processStatus", "success");
+//			respAction.put("actionStatus", actionStatus);
+//			respAction.put("blockStatus", blockStatus);
+//			respAction.put("processAt", processAt);
+//			respAction.put("actionMsg", "Action Message");
+//		} catch (Exception e) {
+//			respAction.put("processStatus", "failed");
+//			e.printStackTrace();
+//		}
+//		return respAction;
+//	}
+
 	@SuppressWarnings("unchecked")
+	@Transactional
 	private Map<String, String> wFeAssign(Map<String, Object> requestMap, String ticketBlockId) {
 		Map<String, String> respAction = new HashMap<String, String>();
 		try {
 			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
 
+			// BULKQC PROCESS
+			ArrayList<Map<String, String>> list = (ArrayList<Map<String, String>>) resultSet.get("fes");
+
+			for (int i = 0; i < list.size(); i++) {
+
+				ticketProcessBulkBlocks.setTicketBulkBlockId(generateProcessIdKey(ticketBlockId));
+				ticketProcessBulkBlocks.setTicketBlockId(ticketBlockId);
+				ticketProcessBulkBlocks.setPlayerFeId(list.get(i).get("feId"));
+				ticketProcessBulkBlocks.setPlayerFeName(list.get(i).get("feName"));
+				ticketProcessBulkBlocks.setPlayerFeType(list.get(i).get("feType"));
+				ticketProcessBulkBlocks.setPlayerFePhone(list.get(i).get("fePhone"));
+				setObserver(ticketProcessBulkBlocks);
+				System.out.println(
+						"9999999999999999999999999999999999999999999999999" + ticketProcessBulkBlocks.toString());
+				ticketProcessBulkBlocksDao.save(ticketProcessBulkBlocks);
+			}
+
 			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
 			String blockStatus = actionStatus;
 			String processAt = String.valueOf(resultSet.get("processAt"));
 			String flowId = String.valueOf(resultSet.get("flowId"));
-			String flowStatus = "PICK_MOB";
+//			String flowStatus = String.valueOf(requestMap.get("flowStatus"));
+
+			String remarks = String.valueOf(resultSet.get("remarks"));
+
+			String flowStatus = "";
 
 			switch (actionStatus) {
 			case "ASSIGNED_FE_FOR_PICKUP":
 				blockStatus = "ASSIGNED_FE_FOR_PICKUP";
+				flowStatus = "PICK_MOB";
 				break;
 			case "ASSIGNED_FE_FOR_SERVICE_PICKUP":
 				blockStatus = "ASSIGNED_FE_FOR_SERVICE_PICKUP";
+				flowStatus = "PICK_MOB";
 				break;
 			case "ASSIGNED_FE_FOR_SERVICE_DROP":
 				blockStatus = "ASSIGNED_FE_FOR_SERVICE_DROP";
+				flowStatus = "DROP_MOB";
 				break;
 			case "ASSIGNED_FE_FOR_DROP":
 				blockStatus = "ASSIGNED_FE_FOR_DROP";
@@ -629,22 +755,57 @@ public class MisReportImpl extends BaseService implements MisServices {
 			// "flowId": "PickAndDropTwoWay",
 			// "newTicketPriority": "high",
 
-			// wFeAssign
-			misReportBlockRepository.updateBlockMISWFeAssign(String.valueOf(resultSet.get("feId")),
-					String.valueOf(resultSet.get("feType")), ticketBlockId);
-			misReportBlockRepository.updateBlockOpsWFeAssign(String.valueOf(resultSet.get("feId")),
-					String.valueOf(resultSet.get("feType")), ticketBlockId);
+			// Insert Remarks When FE Changed
 
-			if (actionStatus.equals("ASSIGNED_FE_FOR_PICKUP")
-					|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_PICKUP")) {
-				misReportBlockRepository.updateBlockMISWPickupFeAssign(String.valueOf(resultSet.get("feId")),
-						String.valueOf(resultSet.get("feType")), String.valueOf(resultSet.get("feName")),
-						ticketBlockId);
-			} else if (actionStatus.equals("ASSIGNED_FE_FOR_DROP")
-					|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_DROP")) {
-				misReportBlockRepository.updateBlockMISWDropFeAssign(String.valueOf(resultSet.get("feId")),
-						String.valueOf(resultSet.get("feType")), String.valueOf(resultSet.get("feName")),
-						ticketBlockId);
+			if (remarks.isBlank() || remarks.isEmpty() || remarks.equals("null")) {
+
+			} else {
+
+				this.insertTicketBlockRemarks(ticketBlockId, remarks);
+			}
+
+			if (flowId.equals("BulkQC")) {
+
+				// wFeAssign
+				misReportBlockRepository.updateBlockMISWFeAssign(String.valueOf(list.get(0).get("feId")),
+						String.valueOf(resultSet.get("feType")), ticketBlockId);
+				misReportBlockRepository.updateBlockOpsWFeAssign(String.valueOf(list.get(0).get("feId")),
+						String.valueOf(resultSet.get("feType")), ticketBlockId);
+
+				if (actionStatus.equals("ASSIGNED_FE_FOR_PICKUP")
+						|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_PICKUP")) {
+					misReportBlockRepository.updateBlockMISWPickupFeAssign(String.valueOf(list.get(0).get("feId")),
+							String.valueOf(resultSet.get("feType")), String.valueOf(list.get(0).get("feName")),
+							ticketBlockId);
+				} else if (actionStatus.equals("ASSIGNED_FE_FOR_DROP")
+						|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_DROP")) {
+					misReportBlockRepository.updateBlockMISWDropFeAssign(String.valueOf(list.get(0).get("feId")),
+							String.valueOf(resultSet.get("feType")), String.valueOf(list.get(0).get("feName")),
+							ticketBlockId);
+
+				}
+			} else {
+
+				for (int i = 0; i < list.size(); i++) {
+
+					// wFeAssign
+					misReportBlockRepository.updateBlockMISWFeAssign(String.valueOf(list.get(i).get("feId")),
+							String.valueOf(resultSet.get("feType")), ticketBlockId);
+					misReportBlockRepository.updateBlockOpsWFeAssign(String.valueOf(list.get(i).get("feId")),
+							String.valueOf(resultSet.get("feType")), ticketBlockId);
+
+					if (actionStatus.equals("ASSIGNED_FE_FOR_PICKUP")
+							|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_PICKUP")) {
+						misReportBlockRepository.updateBlockMISWPickupFeAssign(String.valueOf(list.get(i).get("feId")),
+								String.valueOf(resultSet.get("feType")), String.valueOf(list.get(i).get("feName")),
+								ticketBlockId);
+					} else if (actionStatus.equals("ASSIGNED_FE_FOR_DROP")
+							|| actionStatus.equals("ASSIGNED_FE_FOR_SERVICE_DROP")) {
+						misReportBlockRepository.updateBlockMISWDropFeAssign(String.valueOf(list.get(i).get("feId")),
+								String.valueOf(resultSet.get("feType")), String.valueOf(list.get(i).get("feName")),
+								ticketBlockId);
+					}
+				}
 			}
 
 			// mis
@@ -676,16 +837,17 @@ public class MisReportImpl extends BaseService implements MisServices {
 			String processAt = String.valueOf(resultSet.get("processAt"));
 
 			String retailerId = String.valueOf((requestMap.get("retailerId")));
-			if(retailerId.equals("drp1657114589530TZ70b556867f634bce8214ba67799d8cce") || retailerId.equals("drp1657114417015TZf2b50e43392440ddbcf83fa2d5f88fc0")) { 
-				
-			}else {
+			if (retailerId.equals("drp1657114589530TZ70b556867f634bce8214ba67799d8cce")
+					|| retailerId.equals("drp1657114417015TZf2b50e43392440ddbcf83fa2d5f88fc0")) {
+
+			} else {
 				if (misReportProdRepository.check(ticketBlockId) <= 0) {
-					
+
 					respAction.put("processStatus", "failed");
 					respAction.put("actionMsg", "Product barcode is not Assigned");
 					return respAction;
 					// "Product barcode is not Assigned";
-			
+
 				}
 			}
 
@@ -770,9 +932,9 @@ public class MisReportImpl extends BaseService implements MisServices {
 				barcode_db = barcode_db + ", ";
 			}
 
-			barcodeFinal = barcode_db.trim() + String.valueOf(resultSet.get("barcode")).trim();
+			barcodeFinal = barcode_db + String.valueOf(resultSet.get("barcode")).trim();
 
-			misReportBlockRepository.updateBarcode(ticketBlockId, String.valueOf(barcodeFinal));
+			misReportBlockRepository.updateBarcode(ticketBlockId, String.valueOf(barcodeFinal).trim());
 
 //		misReportBlockRepository.updateBlockMISWBarcodeBlockAssign(String.valueOf(resultSet.get("barcode")),
 //				ticketBlockId);
@@ -786,7 +948,7 @@ public class MisReportImpl extends BaseService implements MisServices {
 			TicketProcessBarcodesBlock block = new TicketProcessBarcodesBlock();
 
 			block.setTicketBlockId(ticketBlockId);
-			block.setBlockBarcode(String.valueOf(barcodeFinal));
+			block.setBlockBarcode(String.valueOf(barcodeFinal).trim());
 
 			setObserver(block);
 
@@ -853,9 +1015,9 @@ public class MisReportImpl extends BaseService implements MisServices {
 				ticketBarcode_db = ticketBarcode_db + ", ";
 			}
 			String inputTicketBarcode = String.valueOf(resultSet.get("barcode")).trim();
-			barcodeFinal = ticketBarcode_db.trim() + String.valueOf(resultSet.get("barcode")).trim();
+			barcodeFinal = ticketBarcode_db + String.valueOf(resultSet.get("barcode")).trim();
 
-			misReportTicketsRepository.updateTicketBarcode(processId, String.valueOf(barcodeFinal));
+			misReportTicketsRepository.updateTicketBarcode(processId, String.valueOf(barcodeFinal).trim());
 
 			/*
 			 * =============================================================================
@@ -866,7 +1028,7 @@ public class MisReportImpl extends BaseService implements MisServices {
 			TicketProcessBarcodesTicket ticket = new TicketProcessBarcodesTicket();
 
 			ticket.setProcessId(processId);
-			ticket.setTicketBarcode(String.valueOf(barcodeFinal));
+			ticket.setTicketBarcode(String.valueOf(barcodeFinal).trim());
 
 			setObserver(ticket);
 
@@ -1304,11 +1466,11 @@ public class MisReportImpl extends BaseService implements MisServices {
 			// OPS
 			misReportBlockRepository.updateBlockOpsBlockActionStatus(flowStatus, actionStatus, actionStatus,
 					ticketBlockId);
-			
-			//UPDATE PLAYER FE ID TO NULL
-			String value="null";
+
+			// SET PLAYER FE ID to NULL
+			String value = "null";
 			misReportBlockRepository.updatePlayerFeIdToNull(value, ticketBlockId);
-			;
+
 			respAction.put("processStatus", "success");
 			respAction.put("actionStatus", actionStatus);
 			respAction.put("blockStatus", blockStatus);
@@ -2581,12 +2743,6 @@ public class MisReportImpl extends BaseService implements MisServices {
 			checkReportBlock(ticketBlockId, processId);
 			respAction = mPickup(requestMap, ticketBlockId);
 			break;
-			
-		case "wInvoice":
-			checkReportBlock(ticketBlockId, processId);
-			respAction = wInvoice(requestMap, ticketBlockId);
-			break;
-			
 		case "mDrop":
 			checkReportBlock(ticketBlockId, processId);
 			respAction = mDrop(requestMap, ticketBlockId);
@@ -2775,6 +2931,21 @@ public class MisReportImpl extends BaseService implements MisServices {
 			respAction = mCustomeAfter(requestMap, ticketBlockId);
 			break;
 
+		case "mProdAssign":
+			checkReportProduct(ticketProductId, processId);
+			respAction = mProdAssign(requestMap, ticketProductId);
+			break;
+
+		case "mProdStatus":
+			checkReportProduct(ticketProductId, processId);
+			respAction = mProdStatus(requestMap, ticketProductId);
+			break;
+
+		case "mProdComplete":
+			checkReportProduct(ticketProductId, processId);
+			respAction = mProdComplete(requestMap, ticketProductId);
+			break;
+
 		default:
 			respAction.put("processStatus", "NO_ACTION_CODE");
 		}
@@ -2809,6 +2980,23 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 			return respMethod;
 		}
+		
+		if (processStatus.equals("pass")) {
+			respMethod.put("methodStatus", "success");
+			respMethod.put("methodMsg", String.valueOf(respAction.get("actionMsg")));
+			respMethod.put("actionInfo", actionInfo);
+
+			return respMethod;
+
+		}
+		if (processStatus.equals("fail")) {
+			respMethod.put("methodStatus", "failed");
+			respMethod.put("methodMsg", String.valueOf(respAction.get("actionMsg")));
+			respMethod.put("actionInfo", actionInfo);
+
+			return respMethod;
+
+		} 
 
 		if (processStatus.equals("") || processStatus.equals("success")) {
 			respMethod.put("methodStatus", "success");
@@ -2817,6 +3005,14 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 			return respMethod;
 
+		}
+		
+		else if (processStatus.equals("updated")) {
+			respMethod.put("methodStatus", "success");
+			respMethod.put("methodMsg", String.valueOf(respAction.get("actionMsg")));
+			respMethod.put("actionInfo", actionInfo);
+
+			return respMethod;
 		} else {
 			respMethod.put("methodStatus", "failed");
 			respMethod.put("methodMsg", String.valueOf(respAction.get("actionMsg")));
@@ -3728,31 +3924,435 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 	}
 
-	//MOHAN CODE FOR INVENTORY
+	// MOHAN CODE FOR INVENTORY
 
-		// inventory
-		@SuppressWarnings("unchecked")
-		private Map<String, String> wInventoryBlockAssign(Map<String, Object> requestMap, String ticketBlockId) {
-			Map<String, String> respAction = new HashMap<String, String>();
-			try {
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-				String processAt = String.valueOf(resultSet.get("processAt"));
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+	// inventory
+	@SuppressWarnings("unchecked")
+	private Map<String, String> wInventoryBlockAssign(Map<String, Object> requestMap, String ticketBlockId) {
+		Map<String, String> respAction = new HashMap<String, String>();
+		try {
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+			String processAt = String.valueOf(resultSet.get("processAt"));
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
 
-				/*
-				 * for loop starts here for validation/ If validation goes wrong it won't let
-				 * the code to insert status
-				 */
-				/* VALIDATING THE INVENTORY FOR INSERTING */
-				String statusUpdate = this.getBlockInventoryAssign(requestMap, ticketBlockId);
+			/*
+			 * for loop starts here for validation/ If validation goes wrong it won't let
+			 * the code to insert status
+			 */
+			/* VALIDATING THE INVENTORY FOR INSERTING */
+			String statusUpdate = this.getBlockInventoryAssign(requestMap, ticketBlockId);
 
-				if (statusUpdate == "NOT_AVAILABLE") {
-					System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
+			if (statusUpdate == "NOT_AVAILABLE") {
+				System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
+				respAction.put("processStatus", "failed");
+				respAction.put("actionMsg", "INVENTORY IS ALREADY VERIFIED");
+				return respAction;
+			}
+
+			List<Map> list = (List<Map>) resultSet.get("jobInventory");
+
+			for (int i = 0; i < list.size(); i++) {
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+
+				System.out.println("===================storeBaysId============================" + storeBaysId);
+
+				/* Check the Inventory Availability Status // returns if stock is not there */
+				String inventoryStatus = this.checkInventoryStatus(itemId, storeBaysId, qnt);
+
+				if (!inventoryStatus.equals("available")) {
+					System.out.println("===============================================NOT AVAILABLE");
 					respAction.put("processStatus", "failed");
-					respAction.put("actionMsg", "INVENTORY IS ALREADY VERIFIED");
+					respAction.put("actionMsg", inventoryStatus);
 					return respAction;
 				}
+			}
+			System.out.println("===============================================AVAILABLE");
 
+			/*
+			 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
+			 * DATABASE TABLES
+			 */
+			for (int i = 0; i < list.size(); i++) {
+				System.out.println("===============================================AVAILABLE ******************");
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+
+				// insert transaction in the "inv_trx_stores_" table that ticket has allocated
+				// with this qnt & update inv_items_quantity_ "qnt"
+
+				String trxType = "debit";
+				this.insertTrxToInvTrxStores(requestMap, qnt, itemId, storeBaysId, trxType);
+
+				// update inv_items_quantity_ count
+				misReportBlockRepository.updateInvItemsQuatity(itemId, storeBaysId, qnt);
+			}
+
+			/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY column */
+
+			misReportBlockRepository.updateInventoryBlockTable(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+			// update to ticket_process_blocks
+			misReportBlockRepository.updateTicketProcessBlocks(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+//				// mis
+//				misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
+//		
+//				// Ops
+//				misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
+		}
+		// TODO Auto-generated method stub
+		return respAction;
+	}
+
+	private String checkInventoryStatus(String itemId, String storeBaysId, String qnt) {
+
+		System.out.println(itemId + storeBaysId + "<====================================VALUES CHECK");
+		Integer inventoryCount = misReportBlockRepository.getInventoryCount(itemId, storeBaysId);
+		System.out.println(inventoryCount + "<======================================");
+		// String count = String.valueOf(inventoryCount.get("qnt"));
+		int dbCount = inventoryCount;
+		int assignQnt = Integer.parseInt(qnt);
+
+		if (assignQnt <= dbCount) {
+			System.out.println("================>AVAILABLE");
+			return "available";
+		} else {
+			return "stock is not available";
+		}
+
+	}
+
+	@SuppressWarnings("unchecked")
+	private void insertTrxToInvTrxStores(Map<String, Object> requestMap, String qnt, String itemId, String storeBaysId,
+			String trxType) {
+		InventoryTrxStores status = new InventoryTrxStores();
+
+		String ticketProductId = String.valueOf(requestMap.get("ticketProductId"));
+
+		if (!(ticketProductId == null || ticketProductId.isEmpty() || ticketProductId.isBlank())) {
+			status.setRefProductId(ticketProductId);
+		}
+		String ticketNo = String.valueOf(requestMap.get("ticketNo"));
+		String storingId = IdGenerate.getKey(ticketNo);
+		System.out.println(storingId + "<==================================");
+		float qntf = Float.parseFloat(qnt);
+
+		status.setStoringId(storingId);
+		status.setItemId(itemId);
+		status.setStoreBaysId(storeBaysId);
+		status.setTrxType(trxType);
+		status.setQnt(qntf);
+		status.setRefJobId(String.valueOf(requestMap.get("ticketBlockId")));
+		status.setRefprocessId(String.valueOf(requestMap.get("processId")));
+		status.setRefTicketNo(ticketNo);
+		status.setHandledAt(getDateAndTime());
+		status.setHandledBy(getValidUser());
+		status.setCreatedAt(getDateAndTime());
+		status.setCreatedBy(getValidUser());
+
+		inventoryTrxStoresRepository.save(status);
+
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, String> mInventoryBlockUsed(Map<String, Object> requestMap, String ticketBlockId) {
+		Map<String, String> respAction = new HashMap<String, String>();
+		try {
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			// String blockStatus = "";
+			String processAt = String.valueOf(resultSet.get("processAt"));
+
+			/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_FE column */
+			misReportBlockRepository.updateInventoryBlockTableFe(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+			/* update to ticket_process_blocks BLOCK_INVENTORY_FE column */
+			misReportBlockRepository.updateTicketProcessBlocksFe(ticketBlockId,
+					String.valueOf(String.valueOf(new JSONObject(resultSet))));
+
+//				// mis
+//				misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
+//					
+//				// Ops
+//				misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
+
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
+		}
+		// TODO Auto-generated method stub
+		return respAction;
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, String> wBlockOldInventoryReturn(Map<String, Object> requestMap, String ticketBlockId)
+			throws JSONException {
+		Map<String, String> respAction = new HashMap<String, String>();
+		try {
+
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String processAt = String.valueOf(resultSet.get("processAt"));
+
+			List<Map> list = (List<Map>) resultSet.get("jobOldInventory");
+
+			/* validating inputs */
+			for (int i = 0; i < list.size(); i++) {
+				Map<String, String> inv = list.get(i);
+				String qnt = String.valueOf(inv.get("qnt"));
+				System.out.println("=======================QUANTITY============>" + qnt);
+				int qntNumber = Integer.parseInt(qnt);
+
+				if (qnt == null || qnt.isEmpty() || qnt.isBlank() || qntNumber == 0) {
+					System.out.println("===============================================QNT IS NOT THERE");
+					respAction.put("processStatus", "failed");
+					respAction.put("actionMsg", "quantity should not be null or 0");
+					return respAction;
+				}
+			}
+			/*
+			 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
+			 * DATABASE TABLES
+			 */
+			for (int i = 0; i < list.size(); i++) {
+				System.out.println("===============================================>AVAILABLE");
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				System.out.println("=======================QUANTITY============>" + qnt);
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+
+				// insert transaction in the "inv_trx_stores_" table that ticket has allocated
+				// with this qnt & update inv_items_quantity_ "qnt"
+
+				String trxType = "credit";
+				this.insertTrxToInvTrxStores(requestMap, qnt, itemId, storeBaysId, trxType);
+
+				Integer count = misReportBlockRepository.getInvItemsQuatity(itemId, storeBaysId);
+
+				if (count <= 0) {
+					this.insertDataItemInvQnt(itemId, storeBaysId, qnt);
+					System.out.println("=====>CREATING NEW ROW IN INVQNT<======");
+				} else {
+					System.out.println("=====>UPDATING<======");
+					// update inv_items_quantity_ count (add old items to database)
+					misReportBlockRepository.updateOldInvItemsQuatity(itemId, storeBaysId, qnt);
+				}
+			}
+
+			/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_RETURNS column */
+			misReportBlockRepository.updateInventoryBlockTableReturns(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+			/* update to ticket_process_blocks BLOCK_INVENTORY_RETURNS column */
+			misReportBlockRepository.updateTicketProcessBlocksReturns(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+//				// mis
+//				misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
+//					
+//				// Ops
+//				misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
+
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
+		}
+		// TODO Auto-generated method stub
+		return respAction;
+	}
+
+	private String insertDataItemInvQnt(String itemId, String storeBaysId, String qnt) {
+		try {
+			misReportBlockRepository.insertInvQntItems(storeBaysId, itemId, qnt, getDateAndTime(), getValidUserName(),
+					getDateAndTime(), getValidUserName());
+			return "updated";
+		} catch (Exception e) {
+			e.printStackTrace();
+			return "notUpdated";
+		}
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, String> wBlockInventoryVerified(Map<String, Object> requestMap, String ticketBlockId) {
+		Map<String, String> respAction = new HashMap<String, String>();
+		try {
+
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String processAt = String.valueOf(resultSet.get("processAt"));
+
+			/* VALIDATING THE INVENTORY FOR INSERTING */
+			String statusUpdate = this.getBlockInventoryVerified(requestMap, ticketBlockId);
+
+			if (statusUpdate == "NOT_AVAILABLE") {
+				System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
+				respAction.put("processStatus", "failed");
+				respAction.put("actionMsg", "INVENTORY IS ALREADY VERIFIED");
+				return respAction;
+			}
+
+			List<Map> list = (List<Map>) resultSet.get("jobVerifiedInventory");
+			// VERIFICATION
+			for (int i = 0; i < list.size(); i++) {
+				System.out.println("========>VEIFICATION<=======");
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				String feQnt = String.valueOf(inv.get("feQnt"));
+				String verifiedQnt = String.valueOf(inv.get("verifiedQnt"));
+
+				int qntNumber = Integer.parseInt(qnt);
+				int feQntNumber = Integer.parseInt(feQnt);
+				int verifiedQntNumber = Integer.parseInt(verifiedQnt);
+
+				if (verifiedQntNumber > qntNumber) {
+					System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
+					respAction.put("processStatus", "failed");
+					respAction.put("actionMsg", "VERIFIED INVENTORY SHOULD NOT BE GREATER THAN ACTUAL INVENTORY");
+					return respAction;
+				}
+			}
+
+			/*
+			 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
+			 * DATABASE TABLES
+			 */
+			for (int i = 0; i < list.size(); i++) {
+				System.out.println("===============================================>AVAILABLE");
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				System.out.println("=======================QUANTITY============>" + qnt);
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+				String feQnt = String.valueOf(inv.get("feQnt"));
+				String verifiedQnt = String.valueOf(inv.get("verifiedQnt"));
+
+				int qntNumber = Integer.parseInt(qnt);
+				int feQntNumber = Integer.parseInt(feQnt);
+				int verifiedQntNumber = Integer.parseInt(verifiedQnt);
+
+				if (!(qntNumber == verifiedQntNumber)) {
+					int addQnt = qntNumber - verifiedQntNumber;
+					// update inv_items_quantity_ count (add unused items to database)
+					misReportBlockRepository.updateVerifiedInvItemsQuatity(itemId, storeBaysId, addQnt);
+					String trxType = "credit";
+					String qntTrx = String.valueOf(addQnt);
+					// insert transaction in the "inv_trx_stores_" table that ticket has allocated
+					this.insertTrxToInvTrxStores(requestMap, qntTrx, itemId, storeBaysId, trxType);
+				}
+			}
+
+			/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_RETURNS column */
+			misReportBlockRepository.updateInventoryBlockTableVerified(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+			/* update to ticket_process_blocks BLOCK_INVENTORY_RETURNS column */
+			misReportBlockRepository.updateTicketProcessBlocksVerified(ticketBlockId,
+					String.valueOf(new JSONObject(resultSet)));
+
+//				// mis
+//				misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
+//					
+//				// Ops
+//				misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
+
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
+		}
+		return respAction;
+	}
+
+	@SuppressWarnings("unchecked")
+	private String getBlockInventoryVerified(Map<String, Object> requestMap, String ticketBlockId) {
+
+		System.out
+				.println("===============================================INVENTORY IS CHECKING======================");
+		Map<String, Object> inventoryData = misReportBlockRepository.getBlockInventoryVerifiedDetails(ticketBlockId);
+		String data = String.valueOf(inventoryData.get("blockInventoryVerified"));
+		System.out.println("********" + data);
+		if (data == "null" || data.isBlank()) {
+			return "AVAILABLE";
+		}
+		return "NOT_AVAILABLE";
+	}
+
+	private String getBlockInventoryAssign(Map<String, Object> requestMap, String ticketBlockId) {
+
+		Map<String, Object> inventoryData = misReportBlockRepository.getBlockInventoryAssignDetails(ticketBlockId);
+		String blockInventory = String.valueOf(inventoryData.get("blockInventory"));
+
+		if (blockInventory == "null" || blockInventory.isBlank()) {
+			return "AVAILABLE";
+		}
+
+		return "NOT_AVAILABLE";
+	}
+
+	@SuppressWarnings("unchecked")
+	private Map<String, String> wInventoryBlockAddition(Map<String, Object> requestMap, String ticketBlockId) {
+		Map<String, String> respAction = new HashMap<String, String>();
+
+		try {
+
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+			String processAt = String.valueOf(resultSet.get("processAt"));
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+
+			/* getData from database for blockInventoryAssign */
+			Map<String, Object> inventoryAssignedData = misReportBlockRepository
+					.getBlockInventoryByTktBlockId(ticketBlockId);
+
+			String jsonData = (String) inventoryAssignedData.get("blockInventory");
+
+			/* insert if field is null || update if data is already existing */
+
+			if (jsonData == null || jsonData.isBlank()) {
+
+				System.out.println(
+						"=============>ASSIGNING INVENTORY BECAUSE PREVIOUSLY IT IS NOT ASSIGNED<===============");
+				@SuppressWarnings("rawtypes")
 				List<Map> list = (List<Map>) resultSet.get("jobInventory");
 
 				for (int i = 0; i < list.size(); i++) {
@@ -3762,26 +4362,26 @@ public class MisReportImpl extends BaseService implements MisServices {
 					String itemId = String.valueOf(inv.get("itemId"));
 					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
 
-					System.out.println("===================storeBaysId============================" + storeBaysId);
+					System.out.println("<===========checking Inventory====>");
 
 					/* Check the Inventory Availability Status // returns if stock is not there */
 					String inventoryStatus = this.checkInventoryStatus(itemId, storeBaysId, qnt);
 
 					if (!inventoryStatus.equals("available")) {
-						System.out.println("===============================================NOT AVAILABLE");
+						System.out.println("<=================INV NOT AVAILABLE");
 						respAction.put("processStatus", "failed");
 						respAction.put("actionMsg", inventoryStatus);
 						return respAction;
 					}
 				}
-				System.out.println("===============================================AVAILABLE");
 
 				/*
 				 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
 				 * DATABASE TABLES
 				 */
+
 				for (int i = 0; i < list.size(); i++) {
-					System.out.println("===============================================AVAILABLE ******************");
+					System.out.println("<============= INV AVAILABLE");
 					Map<String, String> inv = list.get(i);
 
 					String qnt = String.valueOf(inv.get("qnt"));
@@ -3797,7 +4397,6 @@ public class MisReportImpl extends BaseService implements MisServices {
 					// update inv_items_quantity_ count
 					misReportBlockRepository.updateInvItemsQuatity(itemId, storeBaysId, qnt);
 				}
-
 				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY column */
 
 				misReportBlockRepository.updateInventoryBlockTable(ticketBlockId,
@@ -3807,647 +4406,233 @@ public class MisReportImpl extends BaseService implements MisServices {
 				misReportBlockRepository.updateTicketProcessBlocks(ticketBlockId,
 						String.valueOf(new JSONObject(resultSet)));
 
-//					// mis
-//					misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
-//			
-//					// Ops
-//					misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
-
-				respAction.put("processStatus", "success");
-				respAction.put("actionStatus", actionStatus);
-				respAction.put("blockStatus", actionStatus);
-				respAction.put("processAt", processAt);
-				respAction.put("actionMsg", "Action Message");
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
-			}
-			// TODO Auto-generated method stub
-			return respAction;
-		}
-
-		private String checkInventoryStatus(String itemId, String storeBaysId, String qnt) {
-
-			System.out.println(itemId + storeBaysId + "<====================================VALUES CHECK");
-			Integer inventoryCount = misReportBlockRepository.getInventoryCount(itemId, storeBaysId);
-			System.out.println(inventoryCount + "<======================================");
-			// String count = String.valueOf(inventoryCount.get("qnt"));
-			int dbCount = inventoryCount;
-			int assignQnt = Integer.parseInt(qnt);
-
-			if (assignQnt <= dbCount) {
-				System.out.println("================>AVAILABLE");
-				return "available";
-			} else {
-				return "stock is not available";
-			}
-
-		}
-
-		@SuppressWarnings("unchecked")
-		private void insertTrxToInvTrxStores(Map<String, Object> requestMap, String qnt, String itemId, String storeBaysId,
-				String trxType) {
-			InventoryTrxStores status = new InventoryTrxStores();
-
-			String ticketProductId = String.valueOf(requestMap.get("ticketProductId"));
-
-			if (!(ticketProductId == null || ticketProductId.isEmpty() || ticketProductId.isBlank())) {
-				status.setRefProductId(ticketProductId);
-			}
-			String ticketNo = String.valueOf(requestMap.get("ticketNo"));
-			String storingId = IdGenerate.getKey(ticketNo);
-			System.out.println(storingId + "<==================================");
-			float qntf = Float.parseFloat(qnt);
-
-			status.setStoringId(storingId);
-			status.setItemId(itemId);
-			status.setStoreBaysId(storeBaysId);
-			status.setTrxType(trxType);
-			status.setQnt(qntf);
-			status.setRefJobId(String.valueOf(requestMap.get("ticketBlockId")));
-			status.setRefprocessId(String.valueOf(requestMap.get("processId")));
-			status.setRefTicketNo(ticketNo);
-			status.setHandledAt(getDateAndTime());
-			status.setHandledBy(getValidUser());
-			status.setCreatedAt(getDateAndTime());
-			status.setCreatedBy(getValidUser());
-
-			inventoryTrxStoresRepository.save(status);
-
-		}
-
-		@SuppressWarnings("unchecked")
-		private Map<String, String> mInventoryBlockUsed(Map<String, Object> requestMap, String ticketBlockId) {
-			Map<String, String> respAction = new HashMap<String, String>();
-			try {
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-				// String blockStatus = "";
-				String processAt = String.valueOf(resultSet.get("processAt"));
-
-				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_FE column */
-				misReportBlockRepository.updateInventoryBlockTableFe(ticketBlockId,
-						String.valueOf(new JSONObject(resultSet)));
-
-				/* update to ticket_process_blocks BLOCK_INVENTORY_FE column */
-				misReportBlockRepository.updateTicketProcessBlocksFe(ticketBlockId,
-						String.valueOf(String.valueOf(new JSONObject(resultSet))));
-
-//					// mis
-//					misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
-//						
-//					// Ops
-//					misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
-
-				respAction.put("processStatus", "success");
-				respAction.put("actionStatus", actionStatus);
-				respAction.put("blockStatus", actionStatus);
-				respAction.put("processAt", processAt);
-				respAction.put("actionMsg", "Action Message");
-
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
-			}
-			// TODO Auto-generated method stub
-			return respAction;
-		}
-
-		@SuppressWarnings("unchecked")
-		private Map<String, String> wBlockOldInventoryReturn(Map<String, Object> requestMap, String ticketBlockId)
-				throws JSONException {
-			Map<String, String> respAction = new HashMap<String, String>();
-			try {
-
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-				String processAt = String.valueOf(resultSet.get("processAt"));
-
-				List<Map> list = (List<Map>) resultSet.get("jobOldInventory");
-
-				/* validating inputs */
-				for (int i = 0; i < list.size(); i++) {
-					Map<String, String> inv = list.get(i);
-					String qnt = String.valueOf(inv.get("qnt"));
-					System.out.println("=======================QUANTITY============>" + qnt);
-					int qntNumber = Integer.parseInt(qnt);
-
-					if (qnt == null || qnt.isEmpty() || qnt.isBlank() || qntNumber == 0) {
-						System.out.println("===============================================QNT IS NOT THERE");
-						respAction.put("processStatus", "failed");
-						respAction.put("actionMsg", "quantity should not be null or 0");
-						return respAction;
-					}
-				}
-				/*
-				 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
-				 * DATABASE TABLES
-				 */
-				for (int i = 0; i < list.size(); i++) {
-					System.out.println("===============================================>AVAILABLE");
-					Map<String, String> inv = list.get(i);
-
-					String qnt = String.valueOf(inv.get("qnt"));
-					System.out.println("=======================QUANTITY============>" + qnt);
-					String itemId = String.valueOf(inv.get("itemId"));
-					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-
-					// insert transaction in the "inv_trx_stores_" table that ticket has allocated
-					// with this qnt & update inv_items_quantity_ "qnt"
-
-					String trxType = "credit";
-					this.insertTrxToInvTrxStores(requestMap, qnt, itemId, storeBaysId, trxType);
-
-					Integer count = misReportBlockRepository.getInvItemsQuatity(itemId, storeBaysId);
-
-					if (count <= 0) {
-						this.insertDataItemInvQnt(itemId, storeBaysId, qnt);
-						System.out.println("=====>CREATING NEW ROW IN INVQNT<======");
-					} else {
-						System.out.println("=====>UPDATING<======");
-						// update inv_items_quantity_ count (add old items to database)
-						misReportBlockRepository.updateOldInvItemsQuatity(itemId, storeBaysId, qnt);
-					}
-				}
-
-				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_RETURNS column */
-				misReportBlockRepository.updateInventoryBlockTableReturns(ticketBlockId,
-						String.valueOf(new JSONObject(resultSet)));
-
-				/* update to ticket_process_blocks BLOCK_INVENTORY_RETURNS column */
-				misReportBlockRepository.updateTicketProcessBlocksReturns(ticketBlockId,
-						String.valueOf(new JSONObject(resultSet)));
-
-//					// mis
-//					misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
-//						
-//					// Ops
-//					misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
-				respAction.put("processStatus", "success");
-				respAction.put("actionStatus", actionStatus);
-				respAction.put("blockStatus", actionStatus);
-				respAction.put("processAt", processAt);
-				respAction.put("actionMsg", "Action Message");
-
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
-			}
-			// TODO Auto-generated method stub
-			return respAction;
-		}
-		
-		private String insertDataItemInvQnt(String itemId, String storeBaysId, String qnt) {
-			try {
-				misReportBlockRepository.insertInvQntItems(storeBaysId, itemId, qnt, getDateAndTime(), getValidUserName(), getDateAndTime(), getValidUserName());
-				return "updated";
-			} catch (Exception e) {
-				e.printStackTrace();
-				return "notUpdated";
-			}
-		}
-
-		@SuppressWarnings("unchecked")
-		private Map<String, String> wBlockInventoryVerified(Map<String, Object> requestMap, String ticketBlockId) {
-			Map<String, String> respAction = new HashMap<String, String>();
-			try {
-
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-				String processAt = String.valueOf(resultSet.get("processAt"));
-
-				/* VALIDATING THE INVENTORY FOR INSERTING */
-				String statusUpdate = this.getBlockInventoryVerified(requestMap, ticketBlockId);
-
-				if (statusUpdate == "NOT_AVAILABLE") {
-					System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
-					respAction.put("processStatus", "failed");
-					respAction.put("actionMsg", "INVENTORY IS ALREADY VERIFIED");
-					return respAction;
-				}
-
-				List<Map> list = (List<Map>) resultSet.get("jobVerifiedInventory");
-				//VERIFICATION
-				for (int i = 0; i < list.size(); i++) {
-					System.out.println("========>VEIFICATION<=======");
-					Map<String, String> inv = list.get(i);
-					
-					String qnt = String.valueOf(inv.get("qnt"));
-					String feQnt = String.valueOf(inv.get("feQnt"));
-					String verifiedQnt = String.valueOf(inv.get("verifiedQnt"));
-					
-					int qntNumber = Integer.parseInt(qnt);
-					int feQntNumber = Integer.parseInt(feQnt);
-					int verifiedQntNumber = Integer.parseInt(verifiedQnt);
-					
-					if(verifiedQntNumber > qntNumber){
-						System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
-						respAction.put("processStatus", "failed");
-						respAction.put("actionMsg", "VERIFIED INVENTORY SHOULD NOT BE GREATER THAN ACTUAL INVENTORY");
-						return respAction;
-					}
-				}
-
-				/*
-				 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
-				 * DATABASE TABLES
-				 */
-				for (int i = 0; i < list.size(); i++) {
-					System.out.println("===============================================>AVAILABLE");
-					Map<String, String> inv = list.get(i);
-
-					String qnt = String.valueOf(inv.get("qnt"));
-					System.out.println("=======================QUANTITY============>" + qnt);
-					String itemId = String.valueOf(inv.get("itemId"));
-					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-					String feQnt = String.valueOf(inv.get("feQnt"));
-					String verifiedQnt = String.valueOf(inv.get("verifiedQnt"));
-
-					int qntNumber = Integer.parseInt(qnt);
-					int feQntNumber = Integer.parseInt(feQnt);
-					int verifiedQntNumber = Integer.parseInt(verifiedQnt);
-					
-
-					if (!(qntNumber == verifiedQntNumber)) {
-						int addQnt = qntNumber - verifiedQntNumber;
-						// update inv_items_quantity_ count (add unused items to database)
-						misReportBlockRepository.updateVerifiedInvItemsQuatity(itemId, storeBaysId, addQnt);
-						String trxType = "credit";
-						String qntTrx = String.valueOf(addQnt);
-						// insert transaction in the "inv_trx_stores_" table that ticket has allocated
-						this.insertTrxToInvTrxStores(requestMap, qntTrx, itemId, storeBaysId, trxType);
-					}
-				}
-
-				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_RETURNS column */
-				misReportBlockRepository.updateInventoryBlockTableVerified(ticketBlockId,
-						String.valueOf(new JSONObject(resultSet)));
-
-				/* update to ticket_process_blocks BLOCK_INVENTORY_RETURNS column */
-				misReportBlockRepository.updateTicketProcessBlocksVerified(ticketBlockId,
-						String.valueOf(new JSONObject(resultSet)));
-
-//					// mis
-//					misReportBlockRepository.updateBlockMISActionStatus(actionStatus, ticketBlockId);
-//						
-//					// Ops
-//					misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
-				respAction.put("processStatus", "success");
-				respAction.put("actionStatus", actionStatus);
-				respAction.put("blockStatus", actionStatus);
-				respAction.put("processAt", processAt);
-				respAction.put("actionMsg", "Action Message");
-
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
-			}
-			return respAction;
-		}
-
-		@SuppressWarnings("unchecked")
-		private String getBlockInventoryVerified(Map<String, Object> requestMap, String ticketBlockId) {
-
-			System.out.println("===============================================INVENTORY IS CHECKING======================");
-			Map<String, Object> inventoryData = misReportBlockRepository.getBlockInventoryVerifiedDetails(ticketBlockId);
-			String data = String.valueOf(inventoryData.get("blockInventoryVerified"));
-			System.out.println("********" + data);
-			if (data == "null" || data.isBlank()) {
-				return "AVAILABLE";
-			}
-			return "NOT_AVAILABLE";
-		}
-
-		private String getBlockInventoryAssign(Map<String, Object> requestMap, String ticketBlockId) {
-
-			Map<String, Object> inventoryData = misReportBlockRepository.getBlockInventoryAssignDetails(ticketBlockId);
-			String blockInventory = String.valueOf(inventoryData.get("blockInventory"));
-
-			if (blockInventory == "null" || blockInventory.isBlank()) {
-				return "AVAILABLE";
-			}
-
-			return "NOT_AVAILABLE";
-		}
-
-		@SuppressWarnings("unchecked")
-		private Map<String, String> wInventoryBlockAddition(Map<String, Object> requestMap, String ticketBlockId) {
-			Map<String, String> respAction = new HashMap<String, String>();
-
-			try {
-
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-				String processAt = String.valueOf(resultSet.get("processAt"));
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-
-				/* getData from database for blockInventoryAssign */
-				Map<String, Object> inventoryAssignedData = misReportBlockRepository.getBlockInventoryByTktBlockId(ticketBlockId);
-
-				String jsonData = (String) inventoryAssignedData.get("blockInventory");
-
-				/* insert if field is null || update if data is already existing */
-
-				if (jsonData == null || jsonData.isBlank()) {
-
-					System.out.println(
-							"=============>ASSIGNING INVENTORY BECAUSE PREVIOUSLY IT IS NOT ASSIGNED<===============");
-					@SuppressWarnings("rawtypes")
-					List<Map> list = (List<Map>) resultSet.get("jobInventory");
-
-					for (int i = 0; i < list.size(); i++) {
-						Map<String, String> inv = list.get(i);
-
-						String qnt = String.valueOf(inv.get("qnt"));
-						String itemId = String.valueOf(inv.get("itemId"));
-						String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-
-						System.out.println("<===========checking Inventory====>");
-
-						/* Check the Inventory Availability Status // returns if stock is not there */
-						String inventoryStatus = this.checkInventoryStatus(itemId, storeBaysId, qnt);
-
-						if (!inventoryStatus.equals("available")) {
-							System.out.println("<=================INV NOT AVAILABLE");
-							respAction.put("processStatus", "failed");
-							respAction.put("actionMsg", inventoryStatus);
-							return respAction;
-						}
-					}
-
-					/*
-					 * HERE IT WILL UPDATE THE TRANSACTION AND UPDATE THE COUNT IN THE INVENTORY
-					 * DATABASE TABLES
-					 */
-
-					for (int i = 0; i < list.size(); i++) {
-						System.out.println("<============= INV AVAILABLE");
-						Map<String, String> inv = list.get(i);
-
-						String qnt = String.valueOf(inv.get("qnt"));
-						String itemId = String.valueOf(inv.get("itemId"));
-						String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-
-						// insert transaction in the "inv_trx_stores_" table that ticket has allocated
-						// with this qnt & update inv_items_quantity_ "qnt"
-
-						String trxType = "debit";
-						this.insertTrxToInvTrxStores(requestMap, qnt, itemId, storeBaysId, trxType);
-
-						// update inv_items_quantity_ count
-						misReportBlockRepository.updateInvItemsQuatity(itemId, storeBaysId, qnt);
-					}
-					/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY column */
-
-					misReportBlockRepository.updateInventoryBlockTable(ticketBlockId,
-							String.valueOf(new JSONObject(resultSet)));
-
-					// update to ticket_process_blocks
-					misReportBlockRepository.updateTicketProcessBlocks(ticketBlockId,
-							String.valueOf(new JSONObject(resultSet)));
-
-					respAction.put("processStatus", "success");
-					respAction.put("actionStatus", actionStatus);
-					respAction.put("blockStatus", actionStatus);
-					respAction.put("processAt", processAt);
-					respAction.put("actionMsg", "Action Message");
-					return respAction;
-				}
-
-				/* updating the Re-assigned inventory */
-
-				System.out.println("<====updating the assigning NEW inventory=====>");
-
-				Map<String, Object> blockInventory = new Gson().fromJson(jsonData, Map.class);
-
-//					========>Validating the assigned inventory with database
-
-				List<Map> list = (List<Map>) resultSet.get("jobInventory");
-
-				for (int i = 0; i < list.size(); i++) {
-					Map<String, String> inv = list.get(i);
-
-					String qnt = String.valueOf(inv.get("qnt"));
-					String itemId = String.valueOf(inv.get("itemId"));
-					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-
-					System.out.println("<==========>" + storeBaysId + itemId + qnt);
-
-					/* Check the Inventory Availability Status // returns if stock is not there */
-					String inventoryStatus = this.checkInventoryStatus(itemId, storeBaysId, qnt);
-
-					if (!inventoryStatus.equals("available")) {
-						System.out.println("<=================INV NOT AVAILABLE");
-						respAction.put("processStatus", "failed");
-						respAction.put("actionMsg", inventoryStatus);
-						return respAction;
-					}
-				}
-//					======== New Logic from Merging & adding
-				List<Map> inputList = (List<Map>) resultSet.get("jobInventory");
-				List<Map> dbList = (List<Map>) blockInventory.get("jobInventory");
-
-				List<Map<String, String>> newList = new ArrayList<Map<String, String>>();
-				for (int j = 0; j < inputList.size(); j++) {
-
-					Map<String, String> inputListRow = inputList.get(j);
-
-					Integer inputQnt = Integer.parseInt(String.valueOf(inputListRow.get("qnt")));
-					String inputItemId = String.valueOf(inputListRow.get("itemId"));
-
-					if (inputQnt >= 0) {
-						boolean isExist = false;
-						System.out.println("===============Inv==>>" + inputItemId);
-						for (int i = 0; i < dbList.size(); i++) {
-							Map<String, String> dbInv = dbList.get(i);
-							System.out.println("===============DB==>>" + String.valueOf(dbInv));
-
-							Integer newQnt = Integer.parseInt(String.valueOf(dbInv.get("qnt")));
-							String dbItemId = String.valueOf(dbInv.get("itemId"));
-							if (inputItemId.equals(dbItemId)) {
-								isExist = true;
-
-								dbInv.put("qnt", String.valueOf(inputQnt + newQnt));
-								newList.add(dbInv);
-							}
-						}
-						if (!isExist) {
-							System.out.println("<====Adding Not Exist==>>");
-							newList.add(inputListRow);
-						} else {
-							System.out.println("<<==NA==>>");
-						}
-					}
-				}
-				for (int i = 0; i < dbList.size(); i++) {
-					Map<String, String> dbInvRow = dbList.get(i);
-					String dbItemId = String.valueOf(dbInvRow.get("itemId"));
-					boolean ifExist = false;
-					for (int j = 0; j < inputList.size(); j++) {
-						Map<String, String> inputListRow = inputList.get(j);
-						String inputItemId = String.valueOf(inputListRow.get("itemId"));
-						if (inputItemId.equals(dbItemId)) {
-							ifExist = true;
-						}
-					}
-					if (!ifExist) {
-						System.out.println("<=Adding Not Exist==>>");
-						newList.add(dbInvRow);
-					}
-				}
-				JSONObject updatedInv = new JSONObject();
-				updatedInv.put("jobInventory", newList);
-				updatedInv.put("processAt", processAt);
-				updatedInv.put("ticketBlockId", ticketBlockId);
-				updatedInv.put("actionStatus", actionStatus);
-				System.out.println(updatedInv + "<=====>");
-
-//					============>Inserting the transaction and updating the quantity
-				List<Map> reAssignList = (List<Map>) resultSet.get("jobInventory");
-
-				for (int i = 0; i < reAssignList.size(); i++) {
-					Map<String, String> reAssignInv = reAssignList.get(i);
-
-					String aQnt = String.valueOf(reAssignInv.get("qnt"));
-					String aItemId = String.valueOf(reAssignInv.get("itemId"));
-					String aStoreBaysId = String.valueOf(reAssignInv.get("storeBaysId"));
-
-					String trxType = "debit";
-					this.insertTrxToInvTrxStores(requestMap, aQnt, aItemId, aStoreBaysId, trxType);
-
-					// update inv_items_quantity_ count
-					misReportBlockRepository.updateInvItemsQuatity(aItemId, aStoreBaysId, aQnt);
-				}
-
-				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY column */
-
-				misReportBlockRepository.updateInventoryBlockTable(ticketBlockId, String.valueOf(updatedInv));
-
-				// update to ticket_process_blocks
-				misReportBlockRepository.updateTicketProcessBlocks(ticketBlockId, String.valueOf(updatedInv));
-
 				respAction.put("processStatus", "success");
 				respAction.put("actionStatus", actionStatus);
 				respAction.put("blockStatus", actionStatus);
 				respAction.put("processAt", processAt);
 				respAction.put("actionMsg", "Action Message");
 				return respAction;
-
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
 			}
-			return respAction;
-		}
 
-		@SuppressWarnings("unchecked")
-		private Map<String, String> wBlockUnusedInventoryReturn(Map<String, Object> requestMap, String ticketBlockId) {
-			Map<String, String> respAction = new HashMap<String, String>();
+			/* updating the Re-assigned inventory */
 
-			try {
-				Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-				// List<Map<String, Object>> jobVerifiedInventory = (List<Map<String, Object>>)
-				// (resultSet.get("jobOldInventory"));
+			System.out.println("<====updating the assigning NEW inventory=====>");
 
-				String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-				String processAt = String.valueOf(resultSet.get("processAt"));
-				
-				
-				
-				
+			Map<String, Object> blockInventory = new Gson().fromJson(jsonData, Map.class);
 
-				List<Map> list = (List<Map>) resultSet.get("jobUnusedInventory");
-//				/* VERIFICATION WILL HAPPEN HERE */
-//				for (int i = 0; i < list.size(); i++) {
-//					System.out.println("===============================================>AVAILABLE");
-//					Map<String, String> inv = list.get(i);
-//					String qnt = String.valueOf(inv.get("qnt"));
-//					String itemId = String.valueOf(inv.get("itemId"));
-//					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-//					String unUsedQnt = String.valueOf(inv.get("unUsedQnt"));
-//					int qntNumber = Integer.parseInt(qnt);
-//					int unUsedQntNumber = Integer.parseInt(unUsedQnt);
-//					if (!(unUsedQntNumber == qntNumber)) {
-//						System.out.println("=======>entered inv is wrong");
-//						respAction.put("processStatus", "failed");
-//						respAction.put("actionMsg", "PLEASE ENTER CORRECT INVENTORY");
-//						return respAction;
-//					}
-//				}
-				
-				/* VERIFICATION WILL HAPPEN IF ALREADY DONE THIS OR NOT*/
-				String statusUpdate = this.getBlockUnusedInventoryVerified(ticketBlockId);
+//				========>Validating the assigned inventory with database
 
-				if (statusUpdate == "NOT_AVAILABLE") {
-					System.out.println("========>UNUSED INVENTORY IS ALREADY VERIFIED");
+			List<Map> list = (List<Map>) resultSet.get("jobInventory");
+
+			for (int i = 0; i < list.size(); i++) {
+				Map<String, String> inv = list.get(i);
+
+				String qnt = String.valueOf(inv.get("qnt"));
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+
+				System.out.println("<==========>" + storeBaysId + itemId + qnt);
+
+				/* Check the Inventory Availability Status // returns if stock is not there */
+				String inventoryStatus = this.checkInventoryStatus(itemId, storeBaysId, qnt);
+
+				if (!inventoryStatus.equals("available")) {
+					System.out.println("<=================INV NOT AVAILABLE");
 					respAction.put("processStatus", "failed");
-					respAction.put("actionMsg", "Unused Inventory is already verified");
+					respAction.put("actionMsg", inventoryStatus);
 					return respAction;
 				}
-				System.out.println("CAME OUT"); 
-				
-				/* INSERTIONS WILL HAPPEN HERE */
-				for (int i = 0; i < list.size(); i++) {
-					Map<String, String> inv = list.get(i);
-					String qnt = String.valueOf(inv.get("qnt"));
-					String itemId = String.valueOf(inv.get("itemId"));
-					String storeBaysId = String.valueOf(inv.get("storeBaysId"));
-					String unUsedQnt = String.valueOf(inv.get("unUsedQnt"));
-					int unUsedQntNumber = Integer.parseInt(unUsedQnt);
-					int qntNumber = Integer.parseInt(qnt);
-					
-					int addQntNumber = qntNumber - unUsedQntNumber;
-					
-					String addQnt = String.valueOf(addQntNumber);
-					
-					/* update inv_items_quantity_ count (add unused items to database) */
-					misReportBlockRepository.updateVerifiedInvItemsQuatity(itemId, storeBaysId, addQntNumber);
-					String trxType = "credit";
-					/*
-					 * insert transaction in the "inv_trx_stores_" table that ticket has allocated
-					 */
-					this.insertTrxToInvTrxStores(requestMap, addQnt, itemId, storeBaysId, trxType);
+			}
+//				======== New Logic from Merging & adding
+			List<Map> inputList = (List<Map>) resultSet.get("jobInventory");
+			List<Map> dbList = (List<Map>) blockInventory.get("jobInventory");
+
+			List<Map<String, String>> newList = new ArrayList<Map<String, String>>();
+			for (int j = 0; j < inputList.size(); j++) {
+
+				Map<String, String> inputListRow = inputList.get(j);
+
+				Integer inputQnt = Integer.parseInt(String.valueOf(inputListRow.get("qnt")));
+				String inputItemId = String.valueOf(inputListRow.get("itemId"));
+
+				if (inputQnt >= 0) {
+					boolean isExist = false;
+					System.out.println("===============Inv==>>" + inputItemId);
+					for (int i = 0; i < dbList.size(); i++) {
+						Map<String, String> dbInv = dbList.get(i);
+						System.out.println("===============DB==>>" + String.valueOf(dbInv));
+
+						Integer newQnt = Integer.parseInt(String.valueOf(dbInv.get("qnt")));
+						String dbItemId = String.valueOf(dbInv.get("itemId"));
+						if (inputItemId.equals(dbItemId)) {
+							isExist = true;
+
+							dbInv.put("qnt", String.valueOf(inputQnt + newQnt));
+							newList.add(dbInv);
+						}
+					}
+					if (!isExist) {
+						System.out.println("<====Adding Not Exist==>>");
+						newList.add(inputListRow);
+					} else {
+						System.out.println("<<==NA==>>");
+					}
 				}
-				
-				/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY_UNUSED column */
+			}
+			for (int i = 0; i < dbList.size(); i++) {
+				Map<String, String> dbInvRow = dbList.get(i);
+				String dbItemId = String.valueOf(dbInvRow.get("itemId"));
+				boolean ifExist = false;
+				for (int j = 0; j < inputList.size(); j++) {
+					Map<String, String> inputListRow = inputList.get(j);
+					String inputItemId = String.valueOf(inputListRow.get("itemId"));
+					if (inputItemId.equals(dbItemId)) {
+						ifExist = true;
+					}
+				}
+				if (!ifExist) {
+					System.out.println("<=Adding Not Exist==>>");
+					newList.add(dbInvRow);
+				}
+			}
+			JSONObject updatedInv = new JSONObject();
+			updatedInv.put("jobInventory", newList);
+			updatedInv.put("processAt", processAt);
+			updatedInv.put("ticketBlockId", ticketBlockId);
+			updatedInv.put("actionStatus", actionStatus);
+			System.out.println(updatedInv + "<=====>");
 
-				misReportBlockRepository.updateUnusedInventoryBlockMisTable(ticketBlockId, String.valueOf(resultSet));
+//				============>Inserting the transaction and updating the quantity
+			List<Map> reAssignList = (List<Map>) resultSet.get("jobInventory");
 
-				// update to ticket_process_blocks table BLOCK_INVENTORY_UNUSED
-				misReportBlockRepository.updateUnusedInventoryProcessBlocks(ticketBlockId, String.valueOf(resultSet));
+			for (int i = 0; i < reAssignList.size(); i++) {
+				Map<String, String> reAssignInv = reAssignList.get(i);
 
-				respAction.put("processStatus", "success");
-				respAction.put("actionStatus", actionStatus);
-				respAction.put("blockStatus", actionStatus);
-				respAction.put("processAt", processAt);
-				respAction.put("actionMsg", "Action Message");
+				String aQnt = String.valueOf(reAssignInv.get("qnt"));
+				String aItemId = String.valueOf(reAssignInv.get("itemId"));
+				String aStoreBaysId = String.valueOf(reAssignInv.get("storeBaysId"));
 
-			} catch (Exception e) {
-				respAction.put("processStatus", "failed");
-				e.printStackTrace();
+				String trxType = "debit";
+				this.insertTrxToInvTrxStores(requestMap, aQnt, aItemId, aStoreBaysId, trxType);
+
+				// update inv_items_quantity_ count
+				misReportBlockRepository.updateInvItemsQuatity(aItemId, aStoreBaysId, aQnt);
 			}
 
+			/* updating zzz_ticket_mis_report_block_ table BLOCK_INVENTORY column */
+
+			misReportBlockRepository.updateInventoryBlockTable(ticketBlockId, String.valueOf(updatedInv));
+
+			// update to ticket_process_blocks
+			misReportBlockRepository.updateTicketProcessBlocks(ticketBlockId, String.valueOf(updatedInv));
+
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
 			return respAction;
+
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
 		}
-		
-		private String getBlockUnusedInventoryVerified(String ticketBlockId) {
+		return respAction;
+	}
 
-			System.out.println("======UNUSED INVENTORY IS CHECKING======================");
-			Map<String, Object> invUnusedData = misReportBlockRepository
-					.getBlockUnusedInventoryVerifiedDetails(ticketBlockId);
-			String inventoryData = String.valueOf(invUnusedData.get("blockInventoryUnused"));
+	@SuppressWarnings("unchecked")
+	private Map<String, String> wBlockUnusedInventoryReturn(Map<String, Object> requestMap, String ticketBlockId) {
+		Map<String, String> respAction = new HashMap<String, String>();
 
-			if (inventoryData == "null" || inventoryData.isBlank()) {
-				System.out.println("AVAILABLE");
-				return "AVAILABLE";
+		try {
+			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+			// List<Map<String, Object>> jobVerifiedInventory = (List<Map<String, Object>>)
+			// (resultSet.get("jobOldInventory"));
+
+			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String processAt = String.valueOf(resultSet.get("processAt"));
+
+			List<Map> list = (List<Map>) resultSet.get("jobUnusedInventory");
+//			/* VERIFICATION WILL HAPPEN HERE */
+//			for (int i = 0; i < list.size(); i++) {
+//				System.out.println("===============================================>AVAILABLE");
+//				Map<String, String> inv = list.get(i);
+//				String qnt = String.valueOf(inv.get("qnt"));
+//				String itemId = String.valueOf(inv.get("itemId"));
+//				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+//				String unUsedQnt = String.valueOf(inv.get("unUsedQnt"));
+//				int qntNumber = Integer.parseInt(qnt);
+//				int unUsedQntNumber = Integer.parseInt(unUsedQnt);
+//				if (!(unUsedQntNumber == qntNumber)) {
+//					System.out.println("=======>entered inv is wrong");
+//					respAction.put("processStatus", "failed");
+//					respAction.put("actionMsg", "PLEASE ENTER CORRECT INVENTORY");
+//					return respAction;
+//				}
+//			}
+
+			/* VERIFICATION WILL HAPPEN IF ALREADY DONE THIS OR NOT */
+			String statusUpdate = this.getBlockUnusedInventoryVerified(requestMap, ticketBlockId);
+
+			if (statusUpdate == "NOT_AVAILABLE") {
+				System.out.println("===============================================INVENTORY IS ALREADY VERIFIED");
+				respAction.put("processStatus", "updated");
+				respAction.put("actionMsg", "Unused Inventory is already verified");
+				return respAction;
+			}
+			System.out.println("CAME OUT");
+
+			/* INSERTIONS WILL HAPPEN HERE */
+			for (int i = 0; i < list.size(); i++) {
+				Map<String, String> inv = list.get(i);
+				String qnt = String.valueOf(inv.get("qnt"));
+				String itemId = String.valueOf(inv.get("itemId"));
+				String storeBaysId = String.valueOf(inv.get("storeBaysId"));
+				String unUsedQnt = String.valueOf(inv.get("unUsedQnt"));
+				int unUsedQntNumber = Integer.parseInt(unUsedQnt);
+				int qntNumber = Integer.parseInt(qnt);
+
+				int addQntNumber = qntNumber - unUsedQntNumber;
+
+				String addQnt = String.valueOf(addQntNumber);
+
+				/* update inv_items_quantity_ count (add unused items to database) */
+				misReportBlockRepository.updateVerifiedInvItemsQuatity(itemId, storeBaysId, addQntNumber);
+				String trxType = "credit";
+				/*
+				 * insert transaction in the "inv_trx_stores_" table that ticket has allocated
+				 */
+				this.insertTrxToInvTrxStores(requestMap, addQnt, itemId, storeBaysId, trxType);
 			}
 
-			System.out.println("NOT_AVAILABLE");
-			return "NOT_AVAILABLE";
+			respAction.put("processStatus", "success");
+			respAction.put("actionStatus", actionStatus);
+			respAction.put("blockStatus", actionStatus);
+			respAction.put("processAt", processAt);
+			respAction.put("actionMsg", "Action Message");
 
+		} catch (Exception e) {
+			respAction.put("processStatus", "failed");
+			e.printStackTrace();
 		}
+
+		return respAction;
+	}
+
+	@SuppressWarnings("unchecked")
+	private String getBlockUnusedInventoryVerified(Map<String, Object> requestMap, String ticketBlockId) {
+
+		System.out
+				.println("===============================================INVENTORY IS CHECKING======================");
+		String actionCode = "wBlockUnusedInventoryReturn";
+		List<Map<String, Object>> inventoryData = misReportBlockRepository
+				.getBlockUnusedInventoryVerifiedDetails(ticketBlockId, actionCode);
+		System.out.println(inventoryData.size() + "inventoryData.size()");
+		if (inventoryData.size() == 0) {
+			return "AVAILABLE";
+		}
+		return "NOT_AVAILABLE";
+	}
 
 	// ONE ASSIST BUYBACK ACTIVITY
 
@@ -4461,7 +4646,7 @@ public class MisReportImpl extends BaseService implements MisServices {
 			String conComplaintNo = String.valueOf(resultSet.get("conComplaintNo"));
 			String orderNo = String.valueOf(resultSet.get("orderNo"));
 			String valueOffered = "";
-			String status="";
+			String status = "";
 
 			if (String.valueOf(resultSet.get("actionStatus")).equals("RE_QUOTE")) {
 				JSONObject requestJson = getOAJsonForRequote(conComplaintNo);
@@ -4470,8 +4655,8 @@ public class MisReportImpl extends BaseService implements MisServices {
 				String baseAuth = RET_STATUS_UPDATE_URL_OA_BUYBACK_REQUOTE_BASIC_AUTH;
 
 				String rawResponse = callApiPostBaseauth(url, baseAuth, requestJson);
-				
-				System.out.println("RAWRESPONSE------------------->"+rawResponse);
+
+				System.out.println("RAWRESPONSE------------------->" + rawResponse);
 
 				Map<String, Object> requoteResult = new HashMap<String, Object>();
 				requoteResult.put("reqJson", requestJson);
@@ -4482,16 +4667,16 @@ public class MisReportImpl extends BaseService implements MisServices {
 				status = responseJson.getString("status");
 
 				if (status.equals("success")) {
-//			        	 System.out.println("INSIDE IF");
+//				        	 System.out.println("INSIDE IF");
 					JSONObject responseDate = (JSONObject) responseJson.get("data");
 
 					valueOffered = responseDate.getString("price");
 
-//					response.resp200(updatedPrice, responseJson.getString("message"));
+//						response.resp200(updatedPrice, responseJson.getString("message"));
 				} else {
-//			        	 System.out.println("INSIDE ELSE");
+//				        	 System.out.println("INSIDE ELSE");
 					valueOffered = responseJson.getString("message");
-//					response.respFail(updatedPrice, responseJson.getString("message"));
+//						response.respFail(updatedPrice, responseJson.getString("message"));
 				}
 			}
 
@@ -4563,47 +4748,47 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 		System.out.println("******REQUEST***********" + requestMap);
 
-//				Map<String, Object> requestMap = new Gson().fromJson(reqJson, Map.class);
+//					Map<String, Object> requestMap = new Gson().fromJson(reqJson, Map.class);
 
-//				System.out.println("******REQMAP***********"+requestMap);
+//					System.out.println("******REQMAP***********"+requestMap);
 
 		try {
 			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
 
-//					System.out.println("******resultSet***********"+resultSet);
+//						System.out.println("******resultSet***********"+resultSet);
 
 			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
 			String conComplaintNo = String.valueOf(resultSet.get("conComplaintNo"));
 			String orderNo = String.valueOf(resultSet.get("orderNo"));
 			String processAt = String.valueOf(resultSet.get("processAt"));
 
-//					List<Object> resArray = new ArrayList<Object>();
+//						List<Object> resArray = new ArrayList<Object>();
 
-//					ArrayList<Object> resArray = new ArrayList<Object>();
+//						ArrayList<Object> resArray = new ArrayList<Object>();
 			List resArray = new ArrayList<>();
 
 			if (actionStatus.equals("PHYSICAL_EVALUATION_RESULT")) {
 
 				ArrayList<Map<String, String>> list = (ArrayList<Map<String, String>>) resultSet.get("phyEvalQC");
 
-//						System.out.println("SIZE--->"+list.size());
+//							System.out.println("SIZE--->"+list.size());
 
 				for (int i = 0; i < list.size(); i++) {
 					Map<String, Object> res = new HashMap<String, Object>();
 					res.clear();
 					String questionId = list.get(i).get("id");
 					String answer = list.get(i).get("resp");
-					
-//							System.out.println("QUESTION--"+i+"--->"+questionId);
-//							System.out.println("ANSWER--"+i+"--->"+answer);
+
+//								System.out.println("QUESTION--"+i+"--->"+questionId);
+//								System.out.println("ANSWER--"+i+"--->"+answer);
 
 					res.put("questionId", questionId);
 					res.put("answer", answer);
 
 					System.out.println("RES--->" + res);
 
-//							res.put("questionId", questionId);
-//							res.put("answer", answer);
+//								res.put("questionId", questionId);
+//								res.put("answer", answer);
 
 					resArray.add(i, res);
 
@@ -4635,15 +4820,15 @@ public class MisReportImpl extends BaseService implements MisServices {
 
 			JSONObject responseJson = new JSONObject(rawResponse);
 			String status = responseJson.getString("status");
-//			if (status.equals("success")) {
-//				respAction.put("responseStatus", status);
-//			        	 System.out.println("INSIDE IF");
-//					response.resp200(null, responseJson.getString("message"));
-//			} else {
-//				respAction.put("responseStatus", status);
-//			        	 System.out.println("INSIDE ELSE");
-//					response.respFail(null, responseJson.getString("message"));
-//			}
+//				if (status.equals("success")) {
+//					respAction.put("responseStatus", status);
+//				        	 System.out.println("INSIDE IF");
+//						response.resp200(null, responseJson.getString("message"));
+//				} else {
+//					respAction.put("responseStatus", status);
+//				        	 System.out.println("INSIDE ELSE");
+//						response.respFail(null, responseJson.getString("message"));
+//				}
 
 			respAction.put("processStatus", status);
 			respAction.put("actionStatus", actionStatus);
@@ -4674,185 +4859,202 @@ public class MisReportImpl extends BaseService implements MisServices {
 		}
 		return requestJson;
 	}
-	
+
+	/* BULKQC ACTIVITY ACTION CODES */
+
 	@SuppressWarnings("unchecked")
-	private Map<String, String> wInvoice(Map<String, Object> requestMap, String ticketBlockId) {
+	private Map<String, String> mProdAssign(Map<String, Object> requestMap, String ticketProductId) {
 		Map<String, String> respAction = new HashMap<String, String>();
 		try {
+
 			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
 
 			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String blockStatus = actionStatus;
+			String processAt = String.valueOf(resultSet.get("processAt"));
 
-			switch (actionStatus) {
-			case ("READY_FOR_INVOICE"):
-				respAction = this.readyForInvoice(requestMap, ticketBlockId);
-				return respAction;
+			// Check the prodQcStatus based on ticket product id
+			String prodQcStatus = misReportBlockRepository.getProdStatus(ticketProductId);
 
-			case ("INVOICE_NOT_REQUIRED"):
-				respAction = this.invoiceNotRequired(requestMap, ticketBlockId);
-				return respAction;
-				
-			case ("INVOICE_GENERATED"):
-				respAction = this.invoiceGenerated(requestMap, ticketBlockId);
-				return respAction;
-			case ("INVOICE_PAID"):
-				respAction = this.invoicePaid(requestMap, ticketBlockId);
-				return respAction;
-			default:
-				respAction.put("processStatus", "failed");
-				respAction.put("actionMsg", "incorrect status");
-				return respAction;
+			String feId = String.valueOf(resultSet.get("feId"));
+
+			String prodQcStatusChange = "assign";
+
+			if (prodQcStatus.equals("open")) {
+
+				// ticket process product
+				misReportBlockRepository.updateProdStatusAndPlayerIdInProcess(prodQcStatusChange, feId,
+						ticketProductId);
+
+				// mis report prod
+
+				misReportBlockRepository.updateProdStatusInMisProd(prodQcStatusChange, ticketProductId);
+
+				respAction.put("processStatus", "pass");
+				respAction.put("actionMsg", "Product assigned");
+
 			}
-		} catch (Exception e) {
-			respAction.put("processStatus", "failed");
-			e.printStackTrace();
-			return respAction;
-		}
-	}
 
-	@SuppressWarnings("unchecked")
-	private Map<String, String> readyForInvoice(Map<String, Object> requestMap, String ticketBlockId) {
-		Map<String, String> respAction = new HashMap<String, String>();
-		try {
+			else if (prodQcStatus.equals("assign")) {
 
-			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
+				String playerFeId = misReportBlockRepository.getPlayerFeId(ticketProductId);
 
-			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-			String processAt = String.valueOf(resultSet.get("processAt"));
-			String remarks = String.valueOf(resultSet.get("remarks"));
+				System.out.println("*****************PLAYERFEID FROM DB*********************" + playerFeId);
+				System.out.println("*****************FEID *********************" + feId);
 
-			// update in ticket process blocks with remarks & status
-			misReportBlockRepository.updateInvoiceReadyProcessBlocks(ticketBlockId, remarks, actionStatus);
+				if (playerFeId.equals(feId)) {
 
-			// update in zzz_ticket_mis_blocks
-			misReportBlockRepository.updateInvoiceReadyMisBlocks(ticketBlockId, remarks, actionStatus);
+					respAction.put("processStatus", "pass");
+					respAction.put("actionMsg", "Product assigned");
+				} else {
 
-			System.out.println("done<====================================");
+					respAction.put("processStatus", "fail");
+					respAction.put("actionMsg", "Product is already assigned");
 
-			respAction.put("processStatus", "success");
+				}
+
+			}
 			respAction.put("actionStatus", actionStatus);
-			respAction.put("blockStatus", actionStatus);
+			respAction.put("blockStatus", blockStatus);
 			respAction.put("processAt", processAt);
-			respAction.put("actionMsg", "Action Message");
 
-			System.out.println("done2<====================================");
 		} catch (Exception e) {
 			respAction.put("processStatus", "failed");
 			e.printStackTrace();
 		}
 
 		return respAction;
+
 	}
 
 	@SuppressWarnings("unchecked")
-	private Map<String, String> invoiceNotRequired(Map<String, Object> requestMap, String ticketBlockId) {
+	private Map<String, String> mProdStatus(Map<String, Object> requestMap, String ticketProductId) {
+		System.out.println("PRODSTATUS" + ticketProductId);
 		Map<String, String> respAction = new HashMap<String, String>();
 		try {
 
 			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
 
 			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String blockStatus = actionStatus;
 			String processAt = String.valueOf(resultSet.get("processAt"));
-			String remarks = String.valueOf(resultSet.get("remarks"));
 
-			// update in ticket process blocks with remarks & status
-			misReportBlockRepository.updateInvoiceReadyProcessBlocks(ticketBlockId, remarks, actionStatus);
+			String prodQcStatusChange = "";
 
-			// update in zzz_ticket_mis_blocks
-			misReportBlockRepository.updateInvoiceReadyMisBlocks(ticketBlockId, remarks, actionStatus);
+			//
 
-			System.out.println("done<====================================");
+			// BULKQC PROCESS
+//				ArrayList<Map<String, String>> list = (ArrayList<Map<String, String>>) resultSet.get("EvalQC");
+			//
+//				for (int i = 0; i < list.size(); i++) {
+			//
+//					prodQcStatusChange = list.get(i).get("STATUS");
+//				}
 
-			respAction.put("processStatus", "success");
+			Map<String, String> list = (Map<String, String>) resultSet.get("EvalQC");
+
+			prodQcStatusChange = list.get("STATUS");
+
+			// UPDATE PROD_QC_STATUS in PROCESS and MIS REPORT PROD
+
+			// OPS
+
+			misReportBlockRepository.updateProdStatusInProcess(prodQcStatusChange, ticketProductId);
+
+			// MIS
+			misReportBlockRepository.updateProdStatusInMisProd(prodQcStatusChange, ticketProductId);
+
+			respAction.put("processStatus", "pass");
 			respAction.put("actionStatus", actionStatus);
-			respAction.put("blockStatus", actionStatus);
+			respAction.put("blockStatus", blockStatus);
 			respAction.put("processAt", processAt);
-			respAction.put("actionMsg", "Action Message");
+			respAction.put("actionMsg", "Prod QC Status Updated");
 
-			System.out.println("done2<====================================");
 		} catch (Exception e) {
 			respAction.put("processStatus", "failed");
 			e.printStackTrace();
 		}
 
 		return respAction;
+
 	}
 
 	@SuppressWarnings("unchecked")
-	private Map<String, String> invoiceGenerated(Map<String, Object> requestMap, String ticketBlockId) {
+	private Map<String, String> mProdComplete(Map<String, Object> requestMap, String ticketProductId) {
 		Map<String, String> respAction = new HashMap<String, String>();
 		try {
 
 			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
 
 			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
+			String blockStatus = actionStatus;
 			String processAt = String.valueOf(resultSet.get("processAt"));
-			String remarks = String.valueOf(resultSet.get("remarks"));
-			String invoiceNumber = String.valueOf(resultSet.get("invoiceNumber"));
-			String invoiceAmount = String.valueOf(resultSet.get("invoiceAmount"));
 
-			// update in ticket process blocks with remarks & status
-			misReportBlockRepository.updateInvoiceGeneratedProcessBlocks(ticketBlockId, remarks, actionStatus,
-					invoiceNumber, invoiceAmount);
+			String ticketBlockId = String.valueOf(requestMap.get("ticketBlockId"));
 
-			// update in zzz_ticket_mis_blocks
-			misReportBlockRepository.updateInvoiceGeneratedMisBlocks(ticketBlockId, remarks, actionStatus,
-					invoiceNumber, invoiceAmount);
+			String prodQcStatus = "";
 
-			System.out.println("done<====================================");
+			String feId = "";
+
+			String flowStatus = "DROP_WEB";
+
+//				//BULKQC PROCESS
+			ArrayList<Map<String, String>> list = (ArrayList<Map<String, String>>) resultSet.get("EvalQC");
+
+			for (int i = 0; i < list.size(); i++) {
+				prodQcStatus = list.get(i).get("STATUS");
+				if (prodQcStatus.equals("SUCCESS") || prodQcStatus.equals("FAIL")) {
+
+				} else {
+					prodQcStatus = "open";
+
+					misReportBlockRepository.updateProdStatusInProcess(prodQcStatus,
+							list.get(i).get("TICKET_PRODUCT_ID"));
+					misReportBlockRepository.updateProdStatusInMisProd(prodQcStatus,
+							list.get(i).get("TICKET_PRODUCT_ID"));
+
+				}
+			}
+
+			// DELETE PLAYER DETAILS FROM TICKET PROCESS BULK BLOCKS
+
+			String playerFeId = misReportBlockRepository.getPlayerFeIdFromProcess(ticketBlockId);
+
+			feId = String.valueOf(resultSet.get("feId"));
+
+			if (feId.equals(playerFeId)) {
+				String value = "null";
+				misReportBlockRepository.updatePlayerFeIdToNull(value, ticketBlockId);
+				misReportBlockRepository.deletePlayerFromBulk(feId);
+			} else {
+				misReportBlockRepository.deletePlayerFromBulk(feId);
+			}
+
+			Integer count = misReportBlockRepository.getCountPlayer(ticketBlockId);
+			if (count == 0) {
+
+				// MIS
+				misReportBlockRepository.updateBlockMISBlockActionStatus(blockStatus, actionStatus, ticketBlockId,
+						getDateAndTime());
+				// Ops
+				misReportBlockRepository.updateBlockOpsBlockStatus(flowStatus, blockStatus, ticketBlockId);
+				misReportBlockRepository.updateBlockOpsActionStatus(actionStatus, ticketBlockId);
+			}
 
 			respAction.put("processStatus", "success");
 			respAction.put("actionStatus", actionStatus);
-			respAction.put("blockStatus", actionStatus);
+			respAction.put("blockStatus", blockStatus);
 			respAction.put("processAt", processAt);
 			respAction.put("actionMsg", "Action Message");
 
-			System.out.println("done2<====================================");
 		} catch (Exception e) {
 			respAction.put("processStatus", "failed");
 			e.printStackTrace();
 		}
 
 		return respAction;
+
 	}
-
-	@SuppressWarnings("unchecked")
-	private Map<String, String> invoicePaid(Map<String, Object> requestMap, String ticketBlockId) {
-		Map<String, String> respAction = new HashMap<String, String>();
-		try {
-
-			Map<String, Object> resultSet = (Map<String, Object>) (requestMap.get("resultSet"));
-
-			String actionStatus = String.valueOf(resultSet.get("actionStatus"));
-			String processAt = String.valueOf(resultSet.get("processAt"));
-			String remarks = String.valueOf(resultSet.get("remarks"));
-			String invoiceNumber = String.valueOf(resultSet.get("invoiceNumber"));
-			String invoicePaidAmount = String.valueOf(resultSet.get("invoicePaidAmount"));
-
-			// update in ticket process blocks with remarks & status
-			misReportBlockRepository.updateInvoicePaidProcessBlocks(ticketBlockId, remarks, actionStatus, invoiceNumber, invoicePaidAmount);
-
-			// update in zzz_ticket_mis_blocks
-			misReportBlockRepository.updateInvoicePaidProcessBlocks(ticketBlockId, remarks, actionStatus, invoiceNumber, invoicePaidAmount);
-
-			System.out.println("done<====================================");
-
-			respAction.put("processStatus", "success");
-			respAction.put("actionStatus", actionStatus);
-			respAction.put("blockStatus", actionStatus);
-			respAction.put("processAt", processAt);
-			respAction.put("actionMsg", "Action Message");
-
-			System.out.println("done2<====================================");
-		} catch (Exception e) {
-			respAction.put("processStatus", "failed");
-			e.printStackTrace();
-		}
-
-		return respAction;
-	}
-
-	
 
 }
 
@@ -5041,4 +5243,3 @@ public class MisReportImpl extends BaseService implements MisServices {
 //			}
 //			return respAction;
 //		} */
-
