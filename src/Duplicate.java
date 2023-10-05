@@ -11,6 +11,7 @@ public class Duplicate {
 		  {
 			  System.out.println("Hii" + arr[j]);
 			  System.out.println("Hii..");
+			  System.out.println("Hii..");
 		  }
 	  }
 			
