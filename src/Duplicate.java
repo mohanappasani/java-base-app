@@ -9,10 +9,11 @@ public class Duplicate {
 	  for(int j = i + 1; j < arr.length; j++)	{
 		  if (arr [i] == arr [j])
 		  {
-			  System.out.println("Hii" + arr[j]);
+			  System.out.println("xyz" + arr[j]);
 			  System.out.println("Hii..");
 			  System.out.println("Hii..");
 			  System.out.println("Hii..");
+	
 		  }
 	  }
 			
