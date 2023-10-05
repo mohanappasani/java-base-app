@@ -15,7 +15,7 @@ public class Duplicate {
 			  System.out.println("Hii..");
 
 			  System.out.println("world..");
-			  System.out.println("world,,");
+			 
 	
 		  }
 	  }
